@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: monitor-concorrencia
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "cd src && python main.py"
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: 5000
+    
+  - type: cron
+    name: scraper-diario
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "cd src && python -c 'from scrapers_gerais import executar_todos_scrapers; executar_todos_scrapers()'"
+    schedule: "0 8 * * *"  # Executa diariamente às 8h
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: FLASK_ENV
+        value: production
+
