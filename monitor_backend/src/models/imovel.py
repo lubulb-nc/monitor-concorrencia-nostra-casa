@@ -1,7 +1,5 @@
-from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-
-db = SQLAlchemy()
+from src.database import db
 
 class Imovel(db.Model):
     __tablename__ = 'imoveis'

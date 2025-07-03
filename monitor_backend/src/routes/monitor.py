@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
-from src.models.imovel import db, Imovel, ExecucaoScraper
+from src.database import db
+from src.models.imovel import Imovel, ExecucaoScraper
 from src.scrapers_gerais import executar_todos_scrapers
 import threading
 import time
