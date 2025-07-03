@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from src.database import db
 from src.models.imovel import Imovel, ExecucaoScraper
 from src.scrapers_gerais import executar_todos_scrapers
@@ -24,8 +24,9 @@ def executar_monitoramento():
             'mensagem': 'Monitoramento já está em execução'
         }), 400
     
-    # Executar scrapers em thread separada
-    thread = threading.Thread(target=executar_scrapers_background)
+    # Executar scrapers em thread separada COM CONTEXTO DA APLICAÇÃO
+    app = current_app._get_current_object()  # Obter referência da aplicação
+    thread = threading.Thread(target=executar_scrapers_background, args=(app,))
     thread.daemon = True
     thread.start()
     
@@ -52,52 +53,47 @@ def status_monitoramento():
 def listar_imoveis():
     """Lista imóveis com filtros opcionais"""
     # Parâmetros de filtro
-    tipo_negocio = request.args.get('tipo_negocio')
-    tipo_imovel = request.args.get('tipo_imovel')
-    bairro = request.args.get('bairro')
-    imobiliaria = request.args.get('imobiliaria')
     apenas_novos = request.args.get('apenas_novos', 'false').lower() == 'true'
+    tipo_negocio = request.args.get('tipo_negocio', '')
+    tipo_imovel = request.args.get('tipo_imovel', '')
+    bairro = request.args.get('bairro', '')
+    imobiliaria = request.args.get('imobiliaria', '')
     
-    # Query base
+    # Construir query base
     query = Imovel.query.filter(Imovel.ativo == True)
     
     # Aplicar filtros
-    if tipo_negocio and tipo_negocio != 'Todos':
-        if tipo_negocio == 'Locação':
-            query = query.filter(Imovel.tipo_negocio == 'LOCAÇÃO')
-        elif tipo_negocio == 'Vendas':
-            query = query.filter(Imovel.tipo_negocio == 'VENDA')
-    
-    if tipo_imovel and tipo_imovel != 'Todos':
-        query = query.filter(Imovel.tipo_imovel.ilike(f'%{tipo_imovel}%'))
-    
-    if bairro and bairro != 'Todos':
-        query = query.filter(Imovel.endereco.ilike(f'%{bairro}%'))
-    
-    if imobiliaria and imobiliaria != 'Todas':
-        query = query.filter(Imovel.imobiliaria == imobiliaria)
-    
-    # Filtro para imóveis novos (últimas 24 horas)
     if apenas_novos:
         ontem = datetime.utcnow() - timedelta(days=1)
         query = query.filter(Imovel.data_coleta >= ontem)
     
+    if tipo_negocio:
+        query = query.filter(Imovel.tipo_negocio == tipo_negocio)
+    
+    if tipo_imovel:
+        query = query.filter(Imovel.tipo_imovel == tipo_imovel)
+    
+    if bairro:
+        query = query.filter(Imovel.endereco.ilike(f'%{bairro}%'))
+    
+    if imobiliaria:
+        query = query.filter(Imovel.imobiliaria == imobiliaria)
+    
     # Ordenar por data de coleta (mais recentes primeiro)
-    imoveis = query.order_by(Imovel.data_coleta.desc()).limit(50).all()
+    imoveis = query.order_by(Imovel.data_coleta.desc()).limit(100).all()
     
     return jsonify({
-        'status': 'sucesso',
-        'total': len(imoveis),
-        'imoveis': [imovel.to_dict() for imovel in imoveis]
+        'imoveis': [imovel.to_dict() for imovel in imoveis],
+        'total': len(imoveis)
     })
 
 @monitor_bp.route('/estatisticas', methods=['GET'])
 def estatisticas():
-    """Retorna estatísticas do sistema"""
+    """Retorna estatísticas gerais dos imóveis"""
     # Total de imóveis ativos
     total_imoveis = Imovel.query.filter(Imovel.ativo == True).count()
     
-    # Imóveis por tipo de negócio
+    # Por tipo de negócio
     locacao = Imovel.query.filter(and_(Imovel.ativo == True, Imovel.tipo_negocio == 'LOCAÇÃO')).count()
     venda = Imovel.query.filter(and_(Imovel.ativo == True, Imovel.tipo_negocio == 'VENDA')).count()
     
@@ -135,72 +131,78 @@ def historico_execucoes():
         'execucoes': [execucao.to_dict() for execucao in execucoes]
     })
 
-def executar_scrapers_background():
-    """Executa os scrapers em background e salva no banco"""
+def executar_scrapers_background(app):
+    """Executa os scrapers em background e salva no banco COM CONTEXTO DA APLICAÇÃO"""
     global scraper_em_execucao, ultimo_resultado
     
-    scraper_em_execucao = True
-    inicio = time.time()
-    
-    try:
-        # Registrar início da execução
-        execucao = ExecucaoScraper(
-            scraper_nome='Todos os Scrapers',
-            status='EM_ANDAMENTO'
-        )
-        db.session.add(execucao)
-        db.session.commit()
+    # USAR CONTEXTO DA APLICAÇÃO FLASK
+    with app.app_context():
+        scraper_em_execucao = True
+        inicio = time.time()
         
-        # Executar scrapers
-        imoveis_coletados = executar_todos_scrapers()
-        
-        # Salvar imóveis no banco
-        novos_imoveis = 0
-        for imovel_data in imoveis_coletados:
-            # Verificar se já existe
-            existe = Imovel.query.filter(and_(
-                Imovel.imobiliaria == imovel_data.get('imobiliaria'),
-                Imovel.codigo == imovel_data.get('codigo'),
-                Imovel.tipo_negocio == imovel_data.get('tipo_negocio')
-            )).first()
+        try:
+            # Registrar início da execução
+            execucao = ExecucaoScraper(
+                scraper_nome='Todos os Scrapers',
+                status='EM_ANDAMENTO'
+            )
+            db.session.add(execucao)
+            db.session.commit()
             
-            if not existe:
-                novo_imovel = Imovel.from_scraper_data(imovel_data)
-                db.session.add(novo_imovel)
-                novos_imoveis += 1
+            # Executar scrapers
+            imoveis_coletados = executar_todos_scrapers()
+            
+            # Salvar imóveis no banco
+            novos_imoveis = 0
+            for imovel_data in imoveis_coletados:
+                # Verificar se já existe
+                existe = Imovel.query.filter(and_(
+                    Imovel.imobiliaria == imovel_data.get('imobiliaria'),
+                    Imovel.codigo == imovel_data.get('codigo'),
+                    Imovel.tipo_negocio == imovel_data.get('tipo_negocio')
+                )).first()
+                
+                if not existe:
+                    novo_imovel = Imovel.from_scraper_data(imovel_data)
+                    db.session.add(novo_imovel)
+                    novos_imoveis += 1
+            
+            db.session.commit()
+            
+            # Atualizar execução com sucesso
+            tempo_execucao = time.time() - inicio
+            execucao.status = 'SUCESSO'
+            execucao.imoveis_coletados = novos_imoveis
+            execucao.tempo_execucao = tempo_execucao
+            db.session.commit()
+            
+            ultimo_resultado = {
+                'status': 'sucesso',
+                'total_coletados': len(imoveis_coletados),
+                'novos_imoveis': novos_imoveis,
+                'tempo_execucao': tempo_execucao,
+                'data_execucao': datetime.utcnow().isoformat()
+            }
+            
+        except Exception as e:
+            # Registrar erro
+            tempo_execucao = time.time() - inicio
+            try:
+                execucao.status = 'ERRO'
+                execucao.erro_mensagem = str(e)
+                execucao.tempo_execucao = tempo_execucao
+                db.session.commit()
+            except:
+                # Se não conseguir salvar o erro, pelo menos registrar no log
+                print(f"Erro ao salvar execução: {e}")
+            
+            ultimo_resultado = {
+                'status': 'erro',
+                'erro': str(e),
+                'tempo_execucao': tempo_execucao,
+                'data_execucao': datetime.utcnow().isoformat()
+            }
         
-        db.session.commit()
-        
-        # Atualizar execução com sucesso
-        tempo_execucao = time.time() - inicio
-        execucao.status = 'SUCESSO'
-        execucao.imoveis_coletados = novos_imoveis
-        execucao.tempo_execucao = tempo_execucao
-        db.session.commit()
-        
-        ultimo_resultado = {
-            'status': 'sucesso',
-            'total_coletados': len(imoveis_coletados),
-            'novos_imoveis': novos_imoveis,
-            'tempo_execucao': tempo_execucao,
-            'data_execucao': datetime.utcnow().isoformat()
-        }
-        
-    except Exception as e:
-        # Registrar erro
-        tempo_execucao = time.time() - inicio
-        execucao.status = 'ERRO'
-        execucao.erro_mensagem = str(e)
-        execucao.tempo_execucao = tempo_execucao
-        db.session.commit()
-        
-        ultimo_resultado = {
-            'status': 'erro',
-            'erro': str(e),
-            'tempo_execucao': tempo_execucao,
-            'data_execucao': datetime.utcnow().isoformat()
-        }
-    
-    finally:
-        scraper_em_execucao = False
+        finally:
+            scraper_em_execucao = False
 
