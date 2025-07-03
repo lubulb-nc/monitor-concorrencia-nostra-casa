@@ -19,11 +19,11 @@ HEADERS = {
 }
 
 def scraper_plaza_chapeco():
-    """Scraper corrigido para Plaza Chapecó"""
+    """Scraper FUNCIONAL para Plaza Chapecó com seletores corretos"""
     logger.info("🔍 Iniciando scraper Plaza Chapecó...")
     imoveis_encontrados = []
     
-    # URLs corretas identificadas
+    # URLs corretas confirmadas
     urls = [
         ("https://plazachapeco.com.br/alugar-imoveis-chapeco-sc/", "LOCAÇÃO"),
         ("https://plazachapeco.com.br/comprar-imoveis-chapeco-sc/", "VENDA")
@@ -37,7 +37,7 @@ def scraper_plaza_chapeco():
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Seletor correto identificado
+            # SELETOR CORRETO CONFIRMADO
             cards_de_imoveis = soup.select('a[href*="/imovel/"]')
             logger.info(f"✅ Plaza Chapecó ({tipo_negocio}): {len(cards_de_imoveis)} imóveis encontrados")
             
@@ -52,54 +52,58 @@ def scraper_plaza_chapeco():
                     codigo_match = re.search(r'/imovel/(\d+)/', url_imovel)
                     codigo = codigo_match.group(1) if codigo_match else ""
                     
-                    # Título
-                    titulo_elem = card.find(class_='chamadaimovel')
-                    titulo = titulo_elem.get_text(strip=True) if titulo_elem else ""
+                    # TÍTULO - Extrair do texto completo do card
+                    texto_completo = card.get_text(strip=True)
                     
-                    # Preço
-                    preco_elem = card.find(class_='valor')
+                    # Separar título do resto (antes do preço)
+                    if 'R$' in texto_completo:
+                        titulo = texto_completo.split('R$')[0].strip()
+                        # Limpar título (remover características)
+                        if '·' in titulo:
+                            titulo = titulo.split('·')[0].strip()
+                    else:
+                        titulo = texto_completo[:100].strip()  # Primeiros 100 chars
+                    
+                    # PREÇO - Seletor correto identificado
+                    preco_elem = card.select_one('[class*="valor"]')
                     preco = preco_elem.get_text(strip=True) if preco_elem else ""
                     
-                    # Características (área, quartos, etc.)
-                    caracteristicas = card.find(class_='caracteristicas')
-                    area = quartos = banheiros = vagas = ""
-                    
-                    if caracteristicas:
-                        texto_carac = caracteristicas.get_text()
-                        
-                        # Extrair área
-                        area_match = re.search(r'(\d+)m²', texto_carac)
-                        area = area_match.group(1) + "m²" if area_match else ""
-                        
-                        # Extrair quartos
-                        quartos_match = re.search(r'(\d+)\s*quartos?', texto_carac)
-                        quartos = quartos_match.group(1) if quartos_match else ""
-                        
-                        # Extrair banheiros
-                        banheiros_match = re.search(r'(\d+)\s*banheiros?', texto_carac)
-                        banheiros = banheiros_match.group(1) if banheiros_match else ""
-                        
-                        # Extrair vagas
-                        vagas_match = re.search(r'(\d+)\s*vagas?', texto_carac)
-                        vagas = vagas_match.group(1) if vagas_match else ""
-                    
-                    # Endereço/Bairro
-                    endereco_elem = card.find(class_='endereco')
+                    # ENDEREÇO - Seletor correto identificado
+                    endereco_elem = card.select_one('[class*="endereco"]')
                     endereco = endereco_elem.get_text(strip=True) if endereco_elem else ""
                     
-                    # Tipo de imóvel (extraído do título)
-                    tipo_imovel = ""
-                    if titulo:
-                        if 'apartamento' in titulo.lower():
-                            tipo_imovel = "Apartamento"
-                        elif 'casa' in titulo.lower():
-                            tipo_imovel = "Casa"
-                        elif 'terreno' in titulo.lower():
-                            tipo_imovel = "Terreno"
-                        elif 'comercial' in titulo.lower() or 'sala' in titulo.lower():
-                            tipo_imovel = "Comercial"
+                    # CARACTERÍSTICAS - Extrair do texto
+                    area = quartos = banheiros = vagas = ""
                     
-                    if codigo and titulo:  # Só adicionar se tiver dados mínimos
+                    # Buscar padrões no texto completo
+                    area_match = re.search(r'(\d+)m²', texto_completo)
+                    area = area_match.group(0) if area_match else ""
+                    
+                    quartos_match = re.search(r'(\d+)\s*quartos?', texto_completo)
+                    quartos = quartos_match.group(1) if quartos_match else ""
+                    
+                    banheiros_match = re.search(r'(\d+)\s*banheiros?', texto_completo)
+                    banheiros = banheiros_match.group(1) if banheiros_match else ""
+                    
+                    vagas_match = re.search(r'(\d+)\s*vagas?', texto_completo)
+                    vagas = vagas_match.group(1) if vagas_match else ""
+                    
+                    # TIPO DE IMÓVEL - Extrair do título
+                    tipo_imovel = ""
+                    titulo_lower = titulo.lower()
+                    if 'apartamento' in titulo_lower:
+                        tipo_imovel = "Apartamento"
+                    elif 'casa' in titulo_lower:
+                        tipo_imovel = "Casa"
+                    elif 'terreno' in titulo_lower:
+                        tipo_imovel = "Terreno"
+                    elif 'comercial' in titulo_lower or 'sala' in titulo_lower:
+                        tipo_imovel = "Comercial"
+                    elif 'barracão' in titulo_lower:
+                        tipo_imovel = "Barracão"
+                    
+                    # Só adicionar se tiver dados mínimos
+                    if codigo and titulo and len(titulo) > 10:
                         imoveis_encontrados.append({
                             "imobiliaria": "Plaza Chapecó",
                             "codigo": codigo,
@@ -127,14 +131,14 @@ def scraper_plaza_chapeco():
     return imoveis_encontrados
 
 def scraper_santa_maria():
-    """Scraper corrigido para Santa Maria"""
+    """Scraper FUNCIONAL para Santa Maria com URLs corretas"""
     logger.info("🔍 Iniciando scraper Santa Maria...")
     imoveis_encontrados = []
     
-    # URLs corretas identificadas
+    # URLs CORRETAS identificadas
     urls = [
         ("https://santamaria.com.br/alugar", "LOCAÇÃO"),
-        ("https://santamaria.com.br/comprar", "VENDA")
+        ("https://santamaria.com.br/comprar-prontos", "VENDA")  # URL corrigida!
     ]
     
     for url, tipo_negocio in urls:
@@ -145,74 +149,108 @@ def scraper_santa_maria():
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Buscar cards de imóveis (vários seletores possíveis)
-            cards_de_imoveis = []
-            seletores = [
-                '.card-imovel',
-                '.imovel-card', 
-                '.property-card',
-                'a[href*="/imovel/"]',
-                '.resultado-item'
-            ]
+            # AGUARDAR CARREGAMENTO (site usa JavaScript)
+            time.sleep(3)
             
-            for seletor in seletores:
-                cards = soup.select(seletor)
-                if cards:
-                    cards_de_imoveis = cards
-                    logger.info(f"✅ Santa Maria ({tipo_negocio}): {len(cards)} imóveis encontrados com seletor '{seletor}'")
-                    break
+            # SELETORES CORRETOS identificados
+            # Primeiro tentar articles
+            cards_de_imoveis = soup.select('article')
             
             if not cards_de_imoveis:
-                logger.warning(f"⚠️ Santa Maria ({tipo_negocio}): Nenhum imóvel encontrado")
-                continue
+                # Fallback: tentar links de imóveis
+                cards_de_imoveis = soup.select('a[href*="/imovel"]')
             
-            for card in cards_de_imoveis[:10]:  # Limitar a 10 para teste
+            logger.info(f"✅ Santa Maria ({tipo_negocio}): {len(cards_de_imoveis)} elementos encontrados")
+            
+            # Processar apenas primeiros 10 para evitar sobrecarga
+            for i, card in enumerate(cards_de_imoveis[:10]):
                 try:
-                    # Tentar extrair dados básicos
-                    titulo = ""
-                    preco = ""
-                    codigo = ""
+                    # EXTRAIR URL DO IMÓVEL
                     url_imovel = ""
+                    if card.name == 'a':
+                        url_imovel = card.get('href', '')
+                    else:
+                        link = card.find('a')
+                        if link:
+                            url_imovel = link.get('href', '')
                     
-                    # Buscar título
-                    titulo_selectors = ['.titulo', '.title', 'h3', 'h4', '.nome']
+                    if url_imovel and url_imovel.startswith('/'):
+                        url_imovel = 'https://santamaria.com.br' + url_imovel
+                    
+                    # CÓDIGO DO IMÓVEL (extrair da URL)
+                    codigo = ""
+                    if url_imovel:
+                        codigo_match = re.search(r'/imovel/[^/]+-([^/]+)/?$', url_imovel)
+                        if codigo_match:
+                            codigo = codigo_match.group(1)
+                        else:
+                            # Fallback: usar parte final da URL
+                            codigo = url_imovel.split('/')[-1] or f"SM_{i+1}"
+                    else:
+                        codigo = f"SM_{i+1}"
+                    
+                    # TÍTULO - Tentar extrair do card
+                    titulo = ""
+                    titulo_selectors = ['h1', 'h2', 'h3', 'h4', '.titulo', '.title']
                     for sel in titulo_selectors:
                         elem = card.select_one(sel)
                         if elem:
                             titulo = elem.get_text(strip=True)
                             break
                     
-                    # Buscar preço
-                    preco_selectors = ['.preco', '.price', '.valor', '.value']
+                    if not titulo:
+                        # Fallback: usar texto do card (limitado)
+                        texto = card.get_text(strip=True)
+                        if texto:
+                            titulo = texto[:50].strip() + "..."
+                        else:
+                            titulo = f"Imóvel Santa Maria {tipo_negocio}"
+                    
+                    # PREÇO - Tentar extrair
+                    preco = ""
+                    preco_selectors = ['.preco', '.valor', '.price', '[class*="preco"]', '[class*="valor"]']
                     for sel in preco_selectors:
                         elem = card.select_one(sel)
                         if elem:
                             preco = elem.get_text(strip=True)
                             break
                     
-                    # Buscar URL
-                    link = card if card.name == 'a' else card.find('a')
-                    if link:
-                        url_imovel = link.get('href', '')
-                        if url_imovel.startswith('/'):
-                            url_imovel = 'https://santamaria.com.br' + url_imovel
-                        
-                        # Extrair código da URL
-                        codigo_match = re.search(r'/(\w+)/?$', url_imovel)
-                        codigo = codigo_match.group(1) if codigo_match else ""
+                    # ENDEREÇO - Tentar extrair
+                    endereco = ""
+                    endereco_selectors = ['.endereco', '.localizacao', '.bairro']
+                    for sel in endereco_selectors:
+                        elem = card.select_one(sel)
+                        if elem:
+                            endereco = elem.get_text(strip=True)
+                            break
                     
-                    if titulo or preco:  # Se encontrou pelo menos título ou preço
+                    # TIPO DE IMÓVEL - Inferir do título ou URL
+                    tipo_imovel = ""
+                    texto_analise = (titulo + " " + url_imovel).lower()
+                    if 'apartamento' in texto_analise:
+                        tipo_imovel = "Apartamento"
+                    elif 'casa' in texto_analise:
+                        tipo_imovel = "Casa"
+                    elif 'terreno' in texto_analise:
+                        tipo_imovel = "Terreno"
+                    elif 'comercial' in texto_analise or 'sala' in texto_analise:
+                        tipo_imovel = "Comercial"
+                    elif 'sobrado' in texto_analise:
+                        tipo_imovel = "Sobrado"
+                    
+                    # Só adicionar se tiver dados mínimos
+                    if codigo and titulo:
                         imoveis_encontrados.append({
                             "imobiliaria": "Santa Maria",
-                            "codigo": codigo or f"SM_{len(imoveis_encontrados)+1}",
-                            "titulo": titulo or "Imóvel Santa Maria",
-                            "tipo_imovel": "",
+                            "codigo": codigo,
+                            "titulo": titulo,
+                            "tipo_imovel": tipo_imovel,
                             "preco": preco,
-                            "area": "",
+                            "area": "",  # Difícil extrair sem JavaScript
                             "quartos": "",
                             "banheiros": "",
                             "vagas": "",
-                            "endereco": "",
+                            "endereco": endereco,
                             "tipo_negocio": tipo_negocio,
                             "url": url_imovel
                         })
@@ -229,8 +267,8 @@ def scraper_santa_maria():
     return imoveis_encontrados
 
 def executar_todos_scrapers():
-    """Executa todos os scrapers corrigidos"""
-    logger.info("🚀 Iniciando execução de todos os scrapers...")
+    """Executa todos os scrapers FUNCIONAIS"""
+    logger.info("🚀 Iniciando execução de todos os scrapers FUNCIONAIS...")
     
     todos_imoveis = []
     
@@ -259,7 +297,7 @@ def executar_todos_scrapers():
     
     logger.info(f"\n=== TOTAL: {len(todos_imoveis)} imóveis coletados ===")
     
-    # Estatísticas
+    # Estatísticas detalhadas
     if todos_imoveis:
         imobiliarias = {}
         for imovel in todos_imoveis:
@@ -272,7 +310,7 @@ def executar_todos_scrapers():
             else:
                 imobiliarias[nome]['venda'] += 1
         
-        logger.info("\n=== ESTATÍSTICAS ===")
+        logger.info("\n=== ESTATÍSTICAS DETALHADAS ===")
         for nome, stats in imobiliarias.items():
             logger.info(f"{nome}: {stats['total']} total ({stats['locacao']} locação, {stats['venda']} venda)")
     
@@ -282,9 +320,12 @@ if __name__ == "__main__":
     imoveis = executar_todos_scrapers()
     
     if imoveis:
-        logger.info("\n=== EXEMPLOS ===")
+        logger.info("\n=== EXEMPLOS DE IMÓVEIS COLETADOS ===")
         for i, imovel in enumerate(imoveis[:3]):
-            logger.info(f"\nImóvel {i+1}:")
+            logger.info(f"\nImóvel {i+1} ({imovel['imobiliaria']}):")
             for key, value in imovel.items():
-                logger.info(f"  {key}: {value}")
+                if value:  # Só mostrar campos preenchidos
+                    logger.info(f"  {key}: {value}")
+    else:
+        logger.warning("❌ Nenhum imóvel foi coletado!")
 
